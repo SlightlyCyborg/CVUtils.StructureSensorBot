@@ -12,6 +12,17 @@ struct SerialConfig{
 
 SerialConfig SerialConfig_from_main_args(int argc, char** argv);
 
+class Mover{
+  Motors m;
+
+ public:
+  Mover(SerialConfig);
+  void run(int argc, char** argv);
+};
+
+
+
+
 class SceneNavigator{
   Motors m;
 

@@ -35,6 +35,20 @@ public:
 
   }
 
+  void move (unsigned char z, unsigned char y){
+    x_pos = z; //naming conflict, I know
+    y_pos = y;
+
+
+    char commands[2];
+    commands[0]=1; 
+    commands[1]=x_pos;
+    port->write_some(boost::asio::buffer(commands, 2));
+    commands[0]=0; 
+    commands[1]=y_pos;
+    port->write_some(boost::asio::buffer(commands, 2));
+  }
+
   void move_up(int amt){
     y_pos += amt;
     char commands[2];

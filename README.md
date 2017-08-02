@@ -1,1 +1,0 @@
-# CVUtils.StructureSensorBot

@@ -14,6 +14,31 @@
 using namespace cv;
 namespace po = boost::program_options;
 
+void print_diagnostics(Mat &m){
+  double min, max;
+  std::string r;
+
+  //Get min max vals
+  minMaxIdx(m, &min, &max);
+
+  //Get type string
+  switch ( m.type() ) {
+  case CV_8U:  r = "8U"; break;
+  case CV_8S:  r = "8S"; break;
+  case CV_16U: r = "16U"; break;
+  case CV_16S: r = "16S"; break;
+  case CV_32S: r = "32S"; break;
+  case CV_32F: r = "32F"; break;
+  case CV_64F: r = "64F"; break;
+  default:     r = "User"; break;
+  }
+
+ 
+  printf("Mat type: %s\n",r.c_str());
+
+  printf("Pixel Values: %f, %f", min, max);
+
+}
 
 void cv_points_to_vals(Mat &img, std::vector<Point> points, unsigned char* val_buf){
   std::vector<Point>::iterator it;
@@ -44,6 +69,12 @@ SerialConfig SerialConfig_from_main_args(int argc, char** argv){
     ("serial_port,s", po::value<std::string>()->default_value("/dev/ttyACM0"), 
      "Serial port StructureSensorBot is on")
 
+    ("zpos, z", po::value<int>()->default_value(90), 
+     "Serial port StructureSensorBot is on")
+
+    ("ypos, y", po::value<int>()->default_value(60), 
+     "Serial port StructureSensorBot is on")
+
     ("baud,b", po::value<int>()->default_value(9600),
      "baud rate StructureSensorBot is communicating on");
 
@@ -58,6 +89,58 @@ SerialConfig SerialConfig_from_main_args(int argc, char** argv){
   return rv;
 }
 
+Mover::Mover(SerialConfig sc){
+  m.init_serial(sc.port_name, sc.baud);
+  sleep(2);
+}
+
+
+void Mover::run(int argc, char** argv){
+
+  po::options_description desc("Mover options");
+  desc.add_options()
+    ("serial_port,s", po::value<std::string>()->default_value("/dev/ttyACM0"), 
+     "Serial port StructureSensorBot is on")
+
+    ("z", po::value<int>()->default_value(-1), 
+     "Serial port StructureSensorBot is on")
+
+    ("y", po::value<int>()->default_value(-1), 
+     "Serial port StructureSensorBot is on")
+
+    ("baud,b", po::value<int>()->default_value(9600),
+     "baud rate StructureSensorBot is communicating on");
+
+
+
+  po::variables_map vm;
+  po::store(parse_command_line(argc, argv, desc), vm);
+
+
+  int z = vm["z"].as<int>();
+  int y = vm["y"].as<int>();
+
+  if(z!=-1 && y!=-1){
+    m.move(z, y);
+    sleep(1);
+  }else if(z==-1 && y ==-1){
+      FILE *fifo;
+      fifo = fopen("mover_pipe", "r");
+       
+
+      while(true){
+	int i = fscanf(fifo, "%d,%d\n", &z, &y);
+	if(z==0 || y ==0){
+	  break;
+	}
+	if(i == 2){
+	  printf("Moving to %d, %d\n", z, y);
+	  m.move(z, y);
+	}
+      }
+      fclose(fifo);
+    } 
+} 
 
 
 SceneNavigator::SceneNavigator(SerialConfig sc){
@@ -88,6 +171,7 @@ void SceneNavigator::run(){
   bool motor_mode = true;
   bool text_color = false;
   bool circle_blink = true;
+  bool cropped = true;
 
   int thresh_min = -1;
   int thresh_max = -1;
@@ -98,7 +182,6 @@ void SceneNavigator::run(){
   int blink_every = 5;
 
   //stdlib declarations
-
   std::vector<Point> points;
   std::vector<Point>::iterator it;
   
@@ -107,18 +190,31 @@ void SceneNavigator::run(){
 
   Mat depth;
   Point p(400,20);
+  Point cropped_ul, cropped_lr;
   const Scalar color(255,255,255);
   VideoCapture cam(CAP_OPENNI2_ASUS);
   unsigned char vals[points.size()];
 
+
   while(c = waitKey(50)){
+
+
+
     cam.grab();
     cam.retrieve( depth, CV_CAP_OPENNI_DEPTH_MAP );
     frame++;
 
-    
+
+    //Run diagnostics after a few frames
+    if(frame == 100){
+      print_diagnostics(depth);
+    }
+
+    if(cropped){
+    }
+
     minMaxIdx(depth, &min, &max);
-    depth.convertTo(depth, CV_8UC1, 255./(max-min), -min);
+    depth.convertTo(depth, CV_16U, (255*256)/(max-min), -min);
 
 
     sprintf(txt_buf, "<w/s/a/d> movement, <m> motor/point mode, <c> toggle text color");
@@ -170,7 +266,7 @@ void SceneNavigator::run(){
       break;
     case('\n'):
       printf("<cmd> ");
-      printf("-t %d ", (thresh_max - thresh_min)/2);
+      printf("-t %d ", (thresh_max - thresh_min)/2 + thresh_min);
       printf("--xpos %d --ypos %d ", m.x_pos, m.y_pos);
       for(it=points.begin(); it != points.end(); ++it){
 	printf("-x %d -y %d ", it->x, it->y);
